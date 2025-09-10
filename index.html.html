@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Previsão do Tempo</title>
+    <!-- Adiciona o Tailwind CSS para estilo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configurações para usar a fonte Inter e o estilo da imagem de fundo -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            transition: background-image 2s ease-in-out; /* Transição suave para a imagem de fundo */
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed; /* Mantém a imagem fixa enquanto a página rola */
+        }
+        
+        /* Adiciona um efeito de "vidro fosco" ao card principal */
+        .frosted-card {
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            background-color: rgba(255, 255, 255, 0.7); /* Fundo branco semi-transparente */
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="frosted-card p-8 rounded-2xl shadow-xl max-w-lg w-full text-center">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">Previsão do Tempo</h1>
+        
+        <div class="flex items-center justify-center mb-6 space-x-2">
+            <input type="text" id="cityInput" placeholder="Digite o nome da cidade..." class="flex-grow p-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-300">
+            <button id="searchButton" class="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 transition duration-300 shadow-md">
+                Buscar
+            </button>
+        </div>
+
+        <div id="weatherResult" class="mt-6 hidden">
+            <!-- Os resultados do tempo serão inseridos aqui -->
+        </div>
+
+        <div id="errorMsg" class="mt-4 text-red-500 font-medium">
+            <!-- As mensagens de erro serão inseridas aqui -->
+        </div>
+    </div>
+
+    <script>
+        // API de geocodificação do Open-Meteo não precisa de chave.
+        const GEOCODING_API_URL = "https://geocoding-api.open-meteo.com/v1/search";
+
+        // API de previsão do tempo do Open-Meteo, que também não requer chave.
+        const OPEN_METEO_API_URL = "https://api.open-meteo.com/v1/forecast";
+
+        // Referências aos elementos do DOM
+        const cityInput = document.getElementById("cityInput");
+        const searchButton = document.getElementById("searchButton");
+        const weatherResult = document.getElementById("weatherResult");
+        const errorMsg = document.getElementById("errorMsg");
+        const body = document.body;
+
+        // Array com URLs de imagens para o fundo
+        const backgroundImages = [
+            'https://images.pexels.com/photos/33044/access-animal-nature-forest.jpg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1',
+            'https://images.pexels.com/photos/1770809/pexels-photo-1770809.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1',
+            'https://images.pexels.com/photos/3225529/pexels-photo-3225529.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1',
+            'https://images.pexels.com/photos/1484646/pexels-photo-1484646.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1',
+            'https://images.pexels.com/photos/1032650/pexels-photo-1032650.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1'
+        ];
+        
+        let currentImageIndex = 0;
+
+        // Função para mudar a imagem de fundo
+        const changeBackground = () => {
+            currentImageIndex = (currentImageIndex + 1) % backgroundImages.length;
+            body.style.backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), url('${backgroundImages[currentImageIndex]}')`;
+        };
+
+        // Inicia a mudança de imagens de fundo a cada 5 segundos
+        setInterval(changeBackground, 5000);
+        
+        // Mapeamento dos códigos do tempo do Open-Meteo para descrições e ícones do OpenWeatherMap
+        const weatherCodes = {
+            0: { description: "Céu limpo", icon: "01d" },
+            1: { description: "Principalmente céu limpo", icon: "01d" },
+            2: { description: "Parcialmente nublado", icon: "03d" },
+            3: { description: "Nublado", icon: "04d" },
+            45: { description: "Névoa", icon: "50d" },
+            48: { description: "Névoa congelante", icon: "50d" },
+            51: { description: "Garoa leve", icon: "09d" },
+            53: { description: "Garoa moderada", icon: "09d" },
+            55: { description: "Garoa intensa", icon: "09d" },
+            56: { description: "Garoa congelante leve", icon: "09d" },
+            57: { description: "Garoa congelante intensa", icon: "09d" },
+            61: { description: "Chuva fraca", icon: "10d" },
+            63: { description: "Chuva moderada", icon: "10d" },
+            65: { description: "Chuva intensa", icon: "10d" },
+            66: { description: "Chuva congelante leve", icon: "13d" },
+            67: { description: "Chuva congelante intensa", icon: "13d" },
+            71: { description: "Neve fraca", icon: "13d" },
+            73: { description: "Neve moderada", icon: "13d" },
+            75: { description: "Neve intensa", icon: "13d" },
+            77: { description: "Grãos de neve", icon: "13d" },
+            80: { description: "Pancadas de chuva leve", icon: "09d" },
+            81: { description: "Pancadas de chuva moderada", icon: "09d" },
+            82: { description: "Pancadas de chuva violenta", icon: "09d" },
+            85: { description: "Pancadas de neve leve", icon: "13d" },
+            86: { description: "Pancadas de neve intensa", icon: "13d" },
+            95: { description: "Tempestade", icon: "11d" },
+            96: { description: "Tempestade com granizo leve", icon: "11d" },
+            99: { description: "Tempestade com granizo intenso", icon: "11d" },
+        };
+
+        // Função assíncrona para buscar os dados do tempo
+        const fetchWeather = async (city) => {
+            if (!city) {
+                errorMsg.textContent = "Por favor, digite o nome de uma cidade.";
+                weatherResult.classList.add("hidden");
+                return;
+            }
+
+            errorMsg.textContent = "";
+            weatherResult.classList.add("hidden");
+            weatherResult.innerHTML = `<p class="text-gray-500 animate-pulse">Buscando dados...</p>`;
+            weatherResult.classList.remove("hidden");
+
+            try {
+                // Passo 1: Geocodificação para obter lat e lon usando a API do Open-Meteo
+                const geoUrl = `${GEOCODING_API_URL}?name=${city}&count=1`;
+                const geoResponse = await fetch(geoUrl);
+                const geoData = await geoResponse.json();
+
+                if (!geoResponse.ok || !geoData.results || geoData.results.length === 0) {
+                    throw new Error("Cidade não encontrada. Tente novamente.");
+                }
+
+                const { latitude, longitude, name, admin1 } = geoData.results[0];
+                const cityName = name;
+                const cityState = admin1 ? `, ${admin1}` : '';
+                
+                // Passo 2: Chamar a API de previsão do tempo com as coordenadas
+                const weatherUrl = `${OPEN_METEO_API_URL}?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&timezone=auto`;
+                const weatherResponse = await fetch(weatherUrl);
+                const weatherData = await weatherResponse.json();
+
+                if (!weatherResponse.ok || !weatherData.current) {
+                    throw new Error("Falha ao buscar os dados do tempo.");
+                }
+
+                displayWeather(weatherData, `${cityName}${cityState}`);
+            } catch (error) {
+                errorMsg.textContent = error.message;
+                weatherResult.classList.add("hidden");
+            }
+        };
+
+        // Função para exibir os dados do tempo na página
+        const displayWeather = (data, cityName) => {
+            const temp = Math.round(data.current.temperature_2m);
+            const weatherCode = data.current.weather_code;
+            const weatherInfo = weatherCodes[weatherCode] || { description: "Não disponível", icon: "01d" };
+            const iconUrl = `https://openweathermap.org/img/wn/${weatherInfo.icon}@2x.png`;
+            
+            weatherResult.innerHTML = `
+                <h2 class="text-2xl font-semibold text-gray-700">${cityName}</h2>
+                <div class="flex items-center justify-center my-2">
+                    <img src="${iconUrl}" alt="${weatherInfo.description}" class="w-24 h-24">
+                </div>
+                <p class="text-5xl font-bold text-gray-900">${temp}°C</p>
+                <p class="text-lg font-medium text-gray-600 capitalize">${weatherInfo.description}</p>
+            `;
+            weatherResult.classList.remove("hidden");
+        };
+
+        // Adiciona um ouvinte de evento para o botão de busca
+        searchButton.addEventListener("click", () => {
+            const city = cityInput.value.trim();
+            fetchWeather(city);
+        });
+
+        // Permite buscar ao pressionar Enter no campo de texto
+        cityInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") {
+                const city = cityInput.value.trim();
+                fetchWeather(city);
+            }
+        });
+    </script>
+</body>
+</html>
